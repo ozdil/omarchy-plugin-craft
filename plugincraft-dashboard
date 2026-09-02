@@ -4,6 +4,7 @@ import sys
 import subprocess
 import json
 import select
+import re
 
 def get_key():
     if not sys.stdin.isatty():
@@ -45,74 +46,51 @@ def get_installed_plugins():
     except Exception:
         return []
 
-def get_quick_status(key, path):
-    try:
-        if key == "monitor-craft":
-            eng = os.path.join(path, "monitorcraft-engine")
-            res = subprocess.run([eng, "--json"], capture_output=True, text=True, timeout=0.8)
+def strip_ansi(s):
+    return re.sub(r'\x1b\[[0-9;]*m', '', str(s))
+
+def query_plugin_status(p):
+    st_cmd = p.get("status_cmd")
+    if st_cmd and os.path.isfile(st_cmd) and os.access(st_cmd, os.X_OK):
+        try:
+            res = subprocess.run([st_cmd], capture_output=True, text=True, timeout=0.8)
             if res.returncode == 0:
                 data = json.loads(res.stdout)
-                return f"{data.get('total_monitors', 0)} Ekran • 240Hz (VRR)"
-        elif key == "menu-craft":
-            return "🎮 GAME GARAJ • 119 Uygulama"
-        elif key == "omaplayer":
-            eng = os.path.join(path, "omaplayer-engine")
-            res = subprocess.run([eng, "--json"], capture_output=True, text=True, timeout=0.8)
-            if res.returncode == 0:
-                data = json.loads(res.stdout)
-                st = data.get("status", "STOPPED")
-                return f"󰓇 {data.get('title', 'Kapalı')[:22]} ({st})"
-        elif key == "cyber-sentinel":
-            eng = os.path.join(path, "sentinel-scanner")
-            res = subprocess.run([eng], capture_output=True, text=True, timeout=0.8)
-            if res.returncode == 0:
-                data = json.loads(res.stdout)
-                return f"{data.get('total_connections', 0)} Soket • {data.get('status', 'OK')}"
-        elif key == "git-radar":
-            eng = os.path.join(path, "git-scanner")
-            res = subprocess.run([eng], capture_output=True, text=True, timeout=0.8)
-            if res.returncode == 0:
-                data = json.loads(res.stdout)
-                return f"{data.get('today_commits', 0)} Commit • {data.get('total_repos_scanned', 0)} Repo"
-        elif key == "cve-radar":
-            return "Arch Linux Zafiyet Takibi"
-        elif key == "omasend":
-            return "Yerel Ağ QR Paylaşımı"
-        elif key == "badusb-shield":
-            return "Kernel HID & USB Sınıf Denetçisi"
-        elif key == "auth-watch":
-            return "Kimlik Doğrulama Günlüğü"
-        elif key == "ghost-mac":
-            return "Donanım MAC Gizlilik Denetçisi"
-        elif key == "dns-leak-guard":
-            return "DNS Çözümleyici Denetimi"
-        elif key == "opsec-cleaner":
-            return "Metaveri & İz Temizleyici"
-        elif key == "tripwire-vault":
-            return "Sistem Bütünlük Doğrulama"
-    except Exception:
-        pass
-    return "Hazır & Entegre"
+                txt = data.get("text", "")
+                clean_txt = re.sub(r'[\x00-\x1f\x7f-\x9f\r\n]', '', txt).strip()
+                if clean_txt:
+                    return clean_txt[:35]
+        except Exception:
+            pass
+    return p.get("description", "Hazır & Entegre")[:35]
 
 def main():
     plugins = get_installed_plugins()
     if not plugins:
-        print("Yüklü eklenti bulunamadı.")
+        os.system("clear")
+        print("\033[1;36m╔══════════════════════════════════════════════════════════════════════════════╗\033[0m")
+        print("║  󰏖 \033[1;33mPLUGINCRAFT\033[0m • \033[1;37mOmarchy Eklenti Merkezi\033[0m                                    ║")
+        print("\033[1;36m╚══════════════════════════════════════════════════════════════════════════════╝\033[0m\n")
+        print("  \033[1;33mℹ️  Sistemde henüz kurulu bir harici eklenti bulunamadı.\033[0m")
+        print("  Yeni eklentiler kurdukça PluginCraft otomatik olarak listeleyecektir.\n")
+        print("  \033[0;90m[q] Çıkış\033[0m")
+        while True:
+            k = get_key()
+            if k in ('q', 'Q', 'ESC', 'ENTER'):
+                break
         return
 
     selected_idx = 0
-    
-    # Preload statuses
     status_cache = {}
     for p in plugins:
-        status_cache[p["key"]] = get_quick_status(p["key"], p.get("path", ""))
+        status_cache[p["key"]] = query_plugin_status(p)
 
     num_buffer = ""
 
     while True:
         os.system("clear")
         print("\033[1;36m╔══════════════════════════════════════════════════════════════════════════════╗\033[0m")
-        print("║  󰏖 \033[1;33mPLUGINCRAFT\033[0m • \033[1;37mOmarchy Eklenti & Kontrol Karargahı\033[0m                        ║")
+        print(f"║  󰏖 \033[1;33mPLUGINCRAFT\033[0m • \033[1;37mOmarchy Eklenti & Kontrol Karargahı\033[0m [{len(plugins)} Eklenti Aktif]          ║")
         print("\033[1;36m╚══════════════════════════════════════════════════════════════════════════════╝\033[0m")
         print(f"  \033[0;90mKlavye: [↑ / ↓ / j / k] Gezin | [1-{len(plugins)}] Numaraya Bas | [Enter] Başlat | [q] Çıkış\033[0m\n")
 
@@ -123,9 +101,9 @@ def main():
             status = status_cache.get(p["key"], "Hazır")
 
             if idx == selected_idx:
-                print(f" \033[1;44;37m ➔ [{num_str}] {icon} {name:<20} \033[1;33m•\033[0;37m {status:<43} \033[0m")
+                print(f" \033[1;44;37m ➔ [{num_str}] {icon} {name:<18} \033[1;33m•\033[0;37m {status:<45} \033[0m")
             else:
-                print(f"   \033[1;36m[{num_str}]\033[0m {icon} \033[1;37m{name:<20}\033[0m \033[0;90m•\033[0;32m {status:<43}\033[0m")
+                print(f"   \033[1;36m[{num_str}]\033[0m {icon} \033[1;37m{name:<18}\033[0m \033[0;90m•\033[0;32m {status:<45}\033[0m")
 
         print("\n\033[1;36m──────────────────────────────────────────────────────────────────────────────\033[0m")
 
@@ -145,7 +123,7 @@ def main():
             if cmd and os.path.isfile(cmd):
                 os.system("clear")
                 subprocess.run([cmd])
-                status_cache[target["key"]] = get_quick_status(target["key"], target.get("path", ""))
+                status_cache[target["key"]] = query_plugin_status(target)
             num_buffer = ""
         elif key.isdigit():
             num_buffer += key
@@ -158,7 +136,7 @@ def main():
                     if cmd and os.path.isfile(cmd):
                         os.system("clear")
                         subprocess.run([cmd])
-                        status_cache[target["key"]] = get_quick_status(target["key"], target.get("path", ""))
+                        status_cache[target["key"]] = query_plugin_status(target)
                     num_buffer = ""
             elif len(num_buffer) >= 2:
                 num_buffer = ""

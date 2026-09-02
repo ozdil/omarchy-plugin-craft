@@ -35,7 +35,6 @@ def get_installed_plugins():
 
     for dirname in sorted(os.listdir(PLUGINS_BASE)):
         dirpath = os.path.join(PLUGINS_BASE, dirname)
-        # Skip symlinks, hidden folders, and self (plugin-craft)
         if os.path.islink(dirpath) or not os.path.isdir(dirpath) or dirname.startswith("."):
             continue
         if dirname in ("plugin-craft", "ozdil.plugin-craft"):
@@ -62,36 +61,29 @@ def get_installed_plugins():
             continue
         seen_ids.add(plugin_id)
 
-        # Locate dashboard executable
-        dashboard_candidates = [
-            f"{dirname}-dashboard",
-            f"{dirname.replace('-craft', '')}-dashboard",
-            "dashboard",
-            "cleaner-dashboard",
-            "sentinel-dashboard",
-            "shield-dashboard",
-            "cve-dashboard",
-            "tripwire-dashboard",
-            "dns-dashboard",
-            "mac-dashboard",
-            "omasend-dashboard",
-            "menucraft-dashboard",
-            "monitorcraft-dashboard",
-            "omaplayer-dashboard"
-        ]
-        
+        # Locate dashboard executable dynamically
         exec_path = ""
-        for cand in dashboard_candidates:
-            cand_path = os.path.join(dirpath, cand)
-            if os.path.isfile(cand_path) and os.access(cand_path, os.X_OK):
-                exec_path = cand_path
-                break
-        
+        for f in sorted(os.listdir(dirpath)):
+            if f.endswith(("-dashboard", "dashboard")) and not f.endswith((".qml", ".json", ".md")):
+                f_full = os.path.join(dirpath, f)
+                if os.path.isfile(f_full) and os.access(f_full, os.X_OK):
+                    exec_path = f_full
+                    break
+
         if not exec_path:
             for f in sorted(os.listdir(dirpath)):
                 f_full = os.path.join(dirpath, f)
-                if os.path.isfile(f_full) and os.access(f_full, os.X_OK) and not f.endswith((".qml", ".json", ".md")):
+                if os.path.isfile(f_full) and os.access(f_full, os.X_OK) and not f.endswith((".qml", ".json", ".md", ".png", ".jpg")):
                     exec_path = f_full
+                    break
+
+        # Locate status executable dynamically
+        status_path = ""
+        for f in sorted(os.listdir(dirpath)):
+            if f.endswith(("-status", "status")) and not f.endswith((".qml", ".json", ".md")):
+                f_full = os.path.join(dirpath, f)
+                if os.path.isfile(f_full) and os.access(f_full, os.X_OK):
+                    status_path = f_full
                     break
 
         icon = KNOWN_ICONS.get(dirname, "📦")
@@ -104,7 +96,8 @@ def get_installed_plugins():
             "description": sanitize_str(desc, 60),
             "version": sanitize_str(version, 10),
             "path": dirpath,
-            "exec_cmd": exec_path
+            "exec_cmd": exec_path,
+            "status_cmd": status_path
         })
 
     return plugins
