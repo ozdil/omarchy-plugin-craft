@@ -12,7 +12,7 @@ KNOWN_ICONS = {
     "git-radar": "⚡",
     "menu-craft": "🎨",
     "monitor-craft": "🖥️",
-    "spotify-craft": "🎵",
+    "omaplayer": "🎵",
     "opsec-cleaner": "🔒",
     "cve-radar": "🛡️",
     "badusb-shield": "🔌",
@@ -77,7 +77,7 @@ def get_installed_plugins():
             "omasend-dashboard",
             "menucraft-dashboard",
             "monitorcraft-dashboard",
-            "spotifycraft-dashboard"
+            "omaplayer-dashboard"
         ]
         
         exec_path = ""

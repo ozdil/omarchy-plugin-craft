@@ -55,8 +55,8 @@ def get_quick_status(key, path):
                 return f"{data.get('total_monitors', 0)} Ekran • 240Hz (VRR)"
         elif key == "menu-craft":
             return "🎮 GAME GARAJ • 119 Uygulama"
-        elif key == "spotify-craft":
-            eng = os.path.join(path, "spotifycraft-engine")
+        elif key == "omaplayer":
+            eng = os.path.join(path, "omaplayer-engine")
             res = subprocess.run([eng, "--json"], capture_output=True, text=True, timeout=0.8)
             if res.returncode == 0:
                 data = json.loads(res.stdout)
