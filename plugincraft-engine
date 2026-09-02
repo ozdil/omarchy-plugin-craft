@@ -12,6 +12,7 @@ KNOWN_ICONS = {
     "git-radar": "⚡",
     "menu-craft": "🎨",
     "monitor-craft": "🖥️",
+    "spotify-craft": "🎵",
     "plugin-craft": "󰏖",
     "opsec-cleaner": "🔒",
     "cve-radar": "🛡️",
