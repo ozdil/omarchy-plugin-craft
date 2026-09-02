@@ -3,62 +3,141 @@ import os
 import sys
 import subprocess
 import json
+import select
 
-def get_engine_data():
+def get_key():
+    if not sys.stdin.isatty():
+        try:
+            line = sys.stdin.readline()
+            return line.strip() if line else 'q'
+        except Exception:
+            return 'q'
+
+    import termios
+    import tty
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        if ch == '\x1b':
+            # Check if there are more escape sequence bytes available
+            r, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if r:
+                ch2 = sys.stdin.read(1)
+                if ch2 == '[':
+                    ch3 = sys.stdin.read(1)
+                    if ch3 == 'A': return 'UP'
+                    if ch3 == 'B': return 'DOWN'
+                    if ch3 == 'C': return 'RIGHT'
+                    if ch3 == 'D': return 'LEFT'
+            return 'ESC'
+        if ch in ('\r', '\n'): return 'ENTER'
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+def get_installed_plugins():
     plugin_dir = os.path.dirname(os.path.realpath(__file__))
     engine_bin = os.path.join(plugin_dir, "plugincraft-engine")
     try:
         res = subprocess.run([engine_bin], capture_output=True, text=True, timeout=2.0)
-        return json.loads(res.stdout) if res.returncode == 0 else {}
+        return json.loads(res.stdout).get("plugins", []) if res.returncode == 0 else []
     except Exception:
-        return {}
+        return []
+
+def get_quick_status(key, path):
+    try:
+        if key == "monitor-craft":
+            eng = os.path.join(path, "monitorcraft-engine")
+            res = subprocess.run([eng, "--json"], capture_output=True, text=True, timeout=0.8)
+            if res.returncode == 0:
+                data = json.loads(res.stdout)
+                return f"{data.get('total_monitors', 0)} Ekran • 240Hz (VRR)"
+        elif key == "menu-craft":
+            return "🎮 GAME GARAJ • 119 Uygulama"
+        elif key == "cyber-sentinel":
+            eng = os.path.join(path, "sentinel-scanner")
+            res = subprocess.run([eng], capture_output=True, text=True, timeout=0.8)
+            if res.returncode == 0:
+                data = json.loads(res.stdout)
+                return f"{data.get('total_connections', 0)} Soket • {data.get('status', 'OK')}"
+        elif key == "git-radar":
+            eng = os.path.join(path, "git-scanner")
+            res = subprocess.run([eng], capture_output=True, text=True, timeout=0.8)
+            if res.returncode == 0:
+                data = json.loads(res.stdout)
+                return f"{data.get('today_commits', 0)} Commit • {data.get('total_repos_scanned', 0)} Repo"
+        elif key == "cve-radar":
+            return "Arch Linux Zafiyet Takibi"
+        elif key == "omasend":
+            return "Yerel Ağ QR Paylaşımı"
+    except Exception:
+        pass
+    return "Hazır & Entegre"
 
 def main():
+    plugins = get_installed_plugins()
+    if not plugins:
+        print("Yüklü eklenti bulunamadı.")
+        return
+
+    selected_idx = 0
+    
+    # Preload statuses
+    status_cache = {}
+    for p in plugins:
+        status_cache[p["key"]] = get_quick_status(p["key"], p.get("path", ""))
+
+    key_chars = "123456789abcdefghijklmnopqrstuvwxyz"
+
     while True:
-        data = get_engine_data()
-        plugins = data.get("plugins", [])
-        total = data.get("total_plugins", 0)
-
         os.system("clear")
-        print("\033[1;36m=================================================================\033[0m")
-        print("  󰏖 \033[1;33mPLUGINCRAFT • Omarchy Eklenti & Kontrol Karargahı \033[0m")
-        print("\033[1;36m=================================================================\033[0m\n")
+        print("\033[1;36m╔══════════════════════════════════════════════════════════════════════════════╗\033[0m")
+        print("║  󰏖 \033[1;33mPLUGINCRAFT\033[0m • \033[1;37mOmarchy Eklenti & Kontrol Karargahı\033[0m                        ║")
+        print("\033[1;36m╚══════════════════════════════════════════════════════════════════════════════╝\033[0m")
+        print(f"  \033[0;90mKlavye: [↑ / ↓ / j / k] Gezin | [1-9 / Harf] Tek Tuşla Aç | [Enter] Seç | [q] Çıkış\033[0m\n")
 
-        print(f"📦 \033[1;37mYüklü Toplam Eklenti:\033[0m \033[1;32m{total} Adet\033[0m | \033[1;37mDurum:\033[0m \033[1;35mHazır & Entegre\033[0m\n")
-        print("Açmak istediğiniz eklentinin numarasını girin:\n")
-
-        for idx, p in enumerate(plugins, 1):
+        for idx, p in enumerate(plugins):
             icon = p.get("icon", "📦")
             name = p.get("name", "")
-            desc = p.get("description", "")
-            ver = p.get("version", "1.0.0")
-            print(f"  \033[1;34m[{idx:2d}]\033[0m {icon} \033[1;37m{name:<22}\033[0m \033[0;90mv{ver:<5}\033[0m - \033[0;36m{desc[:35]}\033[0m")
+            short_k = key_chars[idx] if idx < len(key_chars) else " "
+            status = status_cache.get(p["key"], "Hazır")
 
-        print("\n" + "-" * 65)
-        print("  \033[1;31m[q]\033[0m Çıkış\n")
+            if idx == selected_idx:
+                print(f" \033[1;44;37m ➔ [{short_k}] {icon} {name:<20} \033[1;33m•\033[0;37m {status:<44} \033[0m")
+            else:
+                print(f"   \033[1;36m[{short_k}]\033[0m {icon} \033[1;37m{name:<20}\033[0m \033[0;90m•\033[0;32m {status:<44}\033[0m")
 
-        try:
-            choice = input("Seçiminiz [1-" + str(len(plugins)) + "/q]: ").strip()
-        except (EOFError, KeyboardInterrupt):
+        print("\n\033[1;36m──────────────────────────────────────────────────────────────────────────────\033[0m")
+
+        key = get_key()
+
+        if key in ('q', 'Q', 'ESC'):
             break
-
-        if choice.lower() == "q":
-            break
-
-        try:
-            sel_idx = int(choice) - 1
-            if 0 <= sel_idx < len(plugins):
-                target = plugins[sel_idx]
-                cmd = target.get("exec_cmd")
-                name = target.get("name")
-                if cmd and os.path.isfile(cmd):
-                    print(f"\n\033[1;32m🚀 '{name}' başlatılıyor...\033[0m")
-                    subprocess.run([cmd])
-                else:
-                    print(f"\n\033[1;31m'{name}' için çalıştırılabilir arayüz bulunamadı.\033[0m")
-                    input("\nDevam etmek için Enter'a basın...")
-        except ValueError:
-            pass
+        elif key in ('UP', 'k', 'K'):
+            selected_idx = (selected_idx - 1) % len(plugins)
+        elif key in ('DOWN', 'j', 'J'):
+            selected_idx = (selected_idx + 1) % len(plugins)
+        elif key == 'ENTER':
+            target = plugins[selected_idx]
+            cmd = target.get("exec_cmd")
+            if cmd and os.path.isfile(cmd):
+                os.system("clear")
+                subprocess.run([cmd])
+                status_cache[target["key"]] = get_quick_status(target["key"], target.get("path", ""))
+        else:
+            # Check 1-key instant trigger
+            for idx, ch in enumerate(key_chars[:len(plugins)]):
+                if key.lower() == ch:
+                    selected_idx = idx
+                    target = plugins[selected_idx]
+                    cmd = target.get("exec_cmd")
+                    if cmd and os.path.isfile(cmd):
+                        os.system("clear")
+                        subprocess.run([cmd])
+                        status_cache[target["key"]] = get_quick_status(target["key"], target.get("path", ""))
+                    break
 
 if __name__ == "__main__":
     main()
