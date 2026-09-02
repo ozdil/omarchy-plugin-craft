@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "ozdil.plugin-craft",
+  "name": "PluginCraft",
+  "version": "1.0.0",
+  "author": "Ozan Özdil (ozdil)",
+  "license": "MIT",
+  "description": "Unified plugin manager and centralized launcher hub for Omarchy.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "PluginCraft",
+    "description": "Unified plugin launcher hub and bar organizer.",
+    "category": "System",
+    "defaultSection": "right",
+    "aliases": ["plugins", "hub", "launcher", "manager", "plugincraft"],
+    "allowMultiple": false
+  }
+}

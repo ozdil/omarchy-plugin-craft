@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+import os
+import sys
+import subprocess
+import json
+
+def get_engine_data():
+    plugin_dir = os.path.dirname(os.path.realpath(__file__))
+    engine_bin = os.path.join(plugin_dir, "plugincraft-engine")
+    try:
+        res = subprocess.run([engine_bin], capture_output=True, text=True, timeout=2.0)
+        return json.loads(res.stdout) if res.returncode == 0 else {}
+    except Exception:
+        return {}
+
+def main():
+    while True:
+        data = get_engine_data()
+        plugins = data.get("plugins", [])
+        total = data.get("total_plugins", 0)
+
+        os.system("clear")
+        print("\033[1;36m=================================================================\033[0m")
+        print("  󰏖 \033[1;33mPLUGINCRAFT • Omarchy Eklenti & Kontrol Karargahı \033[0m")
+        print("\033[1;36m=================================================================\033[0m\n")
+
+        print(f"📦 \033[1;37mYüklü Toplam Eklenti:\033[0m \033[1;32m{total} Adet\033[0m | \033[1;37mDurum:\033[0m \033[1;35mHazır & Entegre\033[0m\n")
+        print("Açmak istediğiniz eklentinin numarasını girin:\n")
+
+        for idx, p in enumerate(plugins, 1):
+            icon = p.get("icon", "📦")
+            name = p.get("name", "")
+            desc = p.get("description", "")
+            ver = p.get("version", "1.0.0")
+            print(f"  \033[1;34m[{idx:2d}]\033[0m {icon} \033[1;37m{name:<22}\033[0m \033[0;90mv{ver:<5}\033[0m - \033[0;36m{desc[:35]}\033[0m")
+
+        print("\n" + "-" * 65)
+        print("  \033[1;31m[q]\033[0m Çıkış\n")
+
+        try:
+            choice = input("Seçiminiz [1-" + str(len(plugins)) + "/q]: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+
+        if choice.lower() == "q":
+            break
+
+        try:
+            sel_idx = int(choice) - 1
+            if 0 <= sel_idx < len(plugins):
+                target = plugins[sel_idx]
+                cmd = target.get("exec_cmd")
+                name = target.get("name")
+                if cmd and os.path.isfile(cmd):
+                    print(f"\n\033[1;32m🚀 '{name}' başlatılıyor...\033[0m")
+                    subprocess.run([cmd])
+                else:
+                    print(f"\n\033[1;31m'{name}' için çalıştırılabilir arayüz bulunamadı.\033[0m")
+                    input("\nDevam etmek için Enter'a basın...")
+        except ValueError:
+            pass
+
+if __name__ == "__main__":
+    main()

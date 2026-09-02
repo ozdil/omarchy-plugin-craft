@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+import os
+import sys
+import json
+import subprocess
+import re
+
+PLUGINS_BASE = os.path.expanduser("~/.config/omarchy/plugins")
+
+KNOWN_ICONS = {
+    "cyber-sentinel": "🛡️",
+    "git-radar": "⚡",
+    "menu-craft": "🎨",
+    "monitor-craft": "🖥️",
+    "plugin-craft": "󰏖",
+    "opsec-cleaner": "🔒",
+    "cve-radar": "🛡️",
+    "badusb-shield": "🔌",
+    "auth-watch": "🚨",
+    "tripwire-vault": "🪤",
+    "dns-leak-guard": "🌐",
+    "ghost-mac": "🎭",
+    "omasend": "🚀"
+}
+
+def sanitize_str(s, max_len=60):
+    return re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(s))[:max_len]
+
+def get_installed_plugins():
+    plugins = []
+    if not os.path.exists(PLUGINS_BASE):
+        return plugins
+
+    for dirname in sorted(os.listdir(PLUGINS_BASE)):
+        dirpath = os.path.join(PLUGINS_BASE, dirname)
+        # Skip symlinks and hidden folders to avoid duplicates
+        if os.path.islink(dirpath) or not os.path.isdir(dirpath) or dirname.startswith("."):
+            continue
+
+        manifest_file = os.path.join(dirpath, "manifest.json")
+        name = dirname.replace("-", " ").title()
+        plugin_id = f"ozdil.{dirname}"
+        desc = "Omarchy Eklentisi"
+        version = "1.0.0"
+
+        if os.path.exists(manifest_file):
+            try:
+                with open(manifest_file, "r", encoding="utf-8", errors="ignore") as f:
+                    m = json.load(f)
+                    plugin_id = m.get("id", plugin_id)
+                    name = m.get("name", name)
+                    desc = m.get("description", desc)
+                    version = m.get("version", version)
+            except Exception:
+                pass
+
+        # Locate dashboard executable
+        dashboard_candidates = [
+            f"{dirname}-dashboard",
+            f"{dirname.replace('-craft', '')}-dashboard",
+            "dashboard",
+            "scanner",
+            "cleaner-dashboard",
+            "sentinel-dashboard",
+            "shield-dashboard",
+            "cve-dashboard",
+            "tripwire-dashboard",
+            "dns-dashboard",
+            "mac-dashboard",
+            "omasend-dashboard",
+            "plugincraft-dashboard",
+            "menucraft-dashboard",
+            "monitorcraft-dashboard"
+        ]
+        
+        exec_path = ""
+        for cand in dashboard_candidates:
+            cand_path = os.path.join(dirpath, cand)
+            if os.path.isfile(cand_path) and os.access(cand_path, os.X_OK):
+                exec_path = cand_path
+                break
+        
+        if not exec_path:
+            for f in os.listdir(dirpath):
+                f_full = os.path.join(dirpath, f)
+                if os.path.isfile(f_full) and os.access(f_full, os.X_OK) and not f.endswith((".qml", ".json", ".md")):
+                    exec_path = f_full
+                    break
+
+        icon = KNOWN_ICONS.get(dirname, "📦")
+
+        plugins.append({
+            "key": dirname,
+            "id": sanitize_str(plugin_id, 35),
+            "name": sanitize_str(name, 30),
+            "icon": icon,
+            "description": sanitize_str(desc, 60),
+            "version": sanitize_str(version, 10),
+            "path": dirpath,
+            "exec_cmd": exec_path
+        })
+
+    return plugins
+
+def main():
+    plugins = get_installed_plugins()
+    output = {
+        "status": "OK",
+        "total_plugins": len(plugins),
+        "plugins": plugins
+    }
+    print(json.dumps(output))
+
+if __name__ == "__main__":
+    main()
