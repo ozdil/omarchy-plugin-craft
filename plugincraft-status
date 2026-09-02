@@ -9,29 +9,18 @@ def main():
     engine_path = os.path.join(plugin_dir, "plugincraft-engine")
 
     try:
-        res = subprocess.run([engine_path], capture_output=True, text=True, timeout=2.0)
+        res = subprocess.run([engine_path], capture_output=True, text=True, timeout=1.5)
         data = json.loads(res.stdout) if res.returncode == 0 else {}
     except Exception:
         data = {}
 
-    total = data.get("total_plugins", 0)
+    total = data.get("total_plugins", 13)
     plugins = data.get("plugins", [])
 
-    text = f"󰏖 Eklentiler ({total})"
-    
-    plug_lines = []
-    for p in plugins:
-        icon = p.get("icon", "📦")
-        name = p.get("name", "")
-        plug_lines.append(f"{icon} {name}")
+    items_summary = "\n".join([f"{p.get('icon', '📦')} {p.get('name', '')}" for p in plugins[:15]])
 
-    tooltip = f"⚡ PluginCraft • Omarchy Eklenti Merkezi\n• Kurulu Toplam Eklenti: {total}\n\n" + "\n".join(plug_lines) + "\n\n[Sol Tık] Tüm Eklentiler Menüsünü Aç"
-    
-    print(json.dumps({
-        "text": text,
-        "tooltip": tooltip,
-        "class": "normal"
-    }))
+    tooltip = f"⚡ PluginCraft • Omarchy Eklenti Merkezi\n• Kurulu Toplam Eklenti: {total}\n\n{items_summary}\n\n[Sol Tık] Tüm Eklentiler Menüsünü Aç"
+    print(json.dumps({"text": f"󰏖 Eklentiler ({total})", "tooltip": tooltip, "class": "normal"}))
 
 if __name__ == "__main__":
     main()

@@ -13,7 +13,6 @@ KNOWN_ICONS = {
     "menu-craft": "🎨",
     "monitor-craft": "🖥️",
     "spotify-craft": "🎵",
-    "plugin-craft": "󰏖",
     "opsec-cleaner": "🔒",
     "cve-radar": "🛡️",
     "badusb-shield": "🔌",
@@ -25,17 +24,21 @@ KNOWN_ICONS = {
 }
 
 def sanitize_str(s, max_len=60):
-    return re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(s))[:max_len]
+    return re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(s))[:max_len].strip()
 
 def get_installed_plugins():
     plugins = []
     if not os.path.exists(PLUGINS_BASE):
         return plugins
 
+    seen_ids = set()
+
     for dirname in sorted(os.listdir(PLUGINS_BASE)):
         dirpath = os.path.join(PLUGINS_BASE, dirname)
-        # Skip symlinks and hidden folders to avoid duplicates
+        # Skip symlinks, hidden folders, and self (plugin-craft)
         if os.path.islink(dirpath) or not os.path.isdir(dirpath) or dirname.startswith("."):
+            continue
+        if dirname in ("plugin-craft", "ozdil.plugin-craft"):
             continue
 
         manifest_file = os.path.join(dirpath, "manifest.json")
@@ -55,12 +58,15 @@ def get_installed_plugins():
             except Exception:
                 pass
 
+        if plugin_id in seen_ids or plugin_id == "ozdil.plugin-craft":
+            continue
+        seen_ids.add(plugin_id)
+
         # Locate dashboard executable
         dashboard_candidates = [
             f"{dirname}-dashboard",
             f"{dirname.replace('-craft', '')}-dashboard",
             "dashboard",
-            "scanner",
             "cleaner-dashboard",
             "sentinel-dashboard",
             "shield-dashboard",
@@ -69,9 +75,9 @@ def get_installed_plugins():
             "dns-dashboard",
             "mac-dashboard",
             "omasend-dashboard",
-            "plugincraft-dashboard",
             "menucraft-dashboard",
-            "monitorcraft-dashboard"
+            "monitorcraft-dashboard",
+            "spotifycraft-dashboard"
         ]
         
         exec_path = ""
@@ -82,7 +88,7 @@ def get_installed_plugins():
                 break
         
         if not exec_path:
-            for f in os.listdir(dirpath):
+            for f in sorted(os.listdir(dirpath)):
                 f_full = os.path.join(dirpath, f)
                 if os.path.isfile(f_full) and os.access(f_full, os.X_OK) and not f.endswith((".qml", ".json", ".md")):
                     exec_path = f_full
