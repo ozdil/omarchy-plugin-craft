@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -10,30 +11,23 @@ Panel {
   moduleName: "ozdil.plugin-craft"
   ipcTarget: "ozdil.plugin-craft"
 
-  property int currentTab: 0 // 0: Eklentiler, 1: Monitör Kontrolü, 2: Menu & OEM
-  property int pluginCount: 13
+  property int currentTab: 0 // 0: Hub, 1: MonitorCraft, 2: MenuCraft
+  property int activePluginCount: 13
   property var pluginList: []
-  
-  // Monitor states
-  property int monitorCount: 2
-  property bool vrrActive: false
-  property var monitorsList: []
+  property var activeMonitors: []
+  property string activeOemBrand: "GAME GARAJ"
   property string statusMsg: ""
 
-  // OEM states
-  property string oemVendor: "GAME GARAJ"
-  property string oemModel: "SLAYER 4 ULTRA"
-  property string oemColor: "#ef4444"
-
   Process {
-    id: pluginProc
+    id: engineProc
     command: [Qt.resolvedUrl("plugincraft-engine").toString().replace(/^file:\/\//, "")]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
         try {
-          var parsed = JSON.parse(text)
-          root.pluginCount = parsed.total_plugins || 13
+          var cleanText = String(text || "").slice(0, 65536)
+          var parsed = JSON.parse(cleanText)
+          root.activePluginCount = parsed.total_plugins || 0
           root.pluginList = parsed.plugins || []
         } catch(e) {}
       }
@@ -41,50 +35,42 @@ Panel {
   }
 
   Process {
-    id: monEngineProc
-    command: [Qt.resolvedUrl("../monitor-craft/monitorcraft-engine").toString().replace(/^file:\/\//, ""), "--json"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var parsed = JSON.parse(text)
-          root.monitorCount = parsed.total_monitors || 2
-          root.vrrActive = parsed.vrr_enabled || false
-          root.monitorsList = parsed.monitors || []
-        } catch(e) {}
-      }
+    id: launchProc
+    onExited: function(exitCode) {
+      launchDeadlineTimer.stop()
     }
   }
 
-  Process {
-    id: monActionProc
-  }
-
-  function runMonitorAction(args, msg) {
-    var enginePath = Qt.resolvedUrl("../monitor-craft/monitorcraft-engine").toString().replace(/^file:\/\//, "")
-    monActionProc.command = [enginePath].concat(args)
-    monActionProc.running = true
-    root.statusMsg = msg || "Uygulandı"
-    monRefreshTimer.restart()
-  }
-
   Timer {
-    id: monRefreshTimer
-    interval: 500
+    id: launchDeadlineTimer
+    interval: 5000
     repeat: false
     onTriggered: {
-      if (!monEngineProc.running) monEngineProc.running = true
+      if (launchProc.running) launchProc.kill()
     }
   }
 
+  Component.onDestruction: {
+    if (engineProc.running) engineProc.kill()
+    if (launchProc.running) launchProc.kill()
+  }
+
+  function launchPluginDirect(execPath) {
+    if (!execPath || typeof execPath !== "string") return
+    if (!execPath.startsWith("/")) return
+    root.close()
+    launchProc.command = ["omarchy-launch-floating-terminal-with-presentation", execPath]
+    launchDeadlineTimer.restart()
+    launchProc.running = true
+  }
+
   Timer {
-    interval: 15000
+    interval: 6000
     running: true
     repeat: true
     triggeredOnStart: true
     onTriggered: {
-      if (!pluginProc.running) pluginProc.running = true
-      if (!monEngineProc.running) monEngineProc.running = true
+      if (!engineProc.running) engineProc.running = true
     }
   }
 
@@ -92,10 +78,10 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰏖 " + root.pluginCount
-    color: "#38bdf8"
+    text: "󰏖 " + root.activePluginCount
+    color: "#a855f7"
     slotSize: Style.bar.statusSlot
-    tooltipText: "PluginCraft: " + root.pluginCount + " Eklenti & Kontrol Merkezi"
+    tooltipText: "PluginCraft: " + root.activePluginCount + " Eklenti Aktif"
     onPressed: root.toggle()
   }
 
@@ -104,92 +90,65 @@ Panel {
     anchorItem: button
     owner: root
     width: 540
-    contentHeight: panel.fittedContentHeight(mainCol.implicitHeight)
+    contentHeight: Math.min(680, panel.fittedContentHeight(mainCol.implicitHeight + 20))
 
-    Column {
-      id: mainCol
-      anchors.left: parent.left
-      anchors.right: parent.right
-      anchors.top: parent.top
-      spacing: Style.space(10)
+    Flickable {
+      anchors.fill: parent
+      contentHeight: mainCol.implicitHeight
+      clip: true
 
-      // Header Bar
-      RowLayout {
-        width: parent.width
-        Text {
-          text: "󰏖 PluginCraft • Kontrol Merkezi"
-          font.pixelSize: Style.font.title
-          font.bold: true
-          color: root.bar ? root.bar.foreground : "#ffffff"
-          Layout.fillWidth: true
-        }
-
-        Rectangle {
-          width: 130
-          height: 24
-          radius: 12
-          color: root.oemColor
-          Text {
-            anchors.centerIn: parent
-            text: "🎮 " + root.oemVendor
-            font.pixelSize: 10
-            font.bold: true
-            color: "#ffffff"
-          }
-        }
-      }
-
-      // Tab Navigation (100% Mouse Clickable)
-      RowLayout {
-        width: parent.width
-        spacing: 6
-
-        Button {
-          text: "📦 Eklentiler (" + root.pluginCount + ")"
-          Layout.fillWidth: true
-          color: root.currentTab === 0 ? "#0284c7" : "#1e293b"
-          onClicked: root.currentTab = 0
-        }
-
-        Button {
-          text: "🖥️ Monitör & Hz"
-          Layout.fillWidth: true
-          color: root.currentTab === 1 ? "#0284c7" : "#1e293b"
-          onClicked: {
-            root.currentTab = 1
-            if (!monEngineProc.running) monEngineProc.running = true
-          }
-        }
-
-        Button {
-          text: "🎨 Menü & OEM"
-          Layout.fillWidth: true
-          color: root.currentTab === 2 ? "#0284c7" : "#1e293b"
-          onClicked: root.currentTab = 2
-        }
-      }
-
-      Rectangle {
-        width: parent.width
-        height: 1
-        color: "#334155"
-      }
-
-      // ==========================================
-      // TAB 0: ALL PLUGINS GRID (Mouse Clickable)
-      // ==========================================
       Column {
+        id: mainCol
         width: parent.width
-        visible: root.currentTab === 0
-        spacing: 8
+        spacing: Style.space(10)
 
-        Text {
-          text: "Yüklü tüm araçlar (Başlatmak için tıklayın):"
-          font.pixelSize: Style.font.caption
-          color: "#94a3b8"
+        // Header
+        RowLayout {
+          width: parent.width
+          Text {
+            textFormat: Text.PlainText
+            text: "󰏖 PluginCraft"
+            font.bold: true
+            font.pixelSize: Style.font.title
+            color: "#a855f7"
+          }
+          Item { Layout.fillWidth: true }
+          Text {
+            textFormat: Text.PlainText
+            text: root.activePluginCount + " Eklenti Kurulu"
+            font.pixelSize: Style.font.caption
+            color: "#94a3b8"
+          }
         }
 
+        // Tab Selector
+        RowLayout {
+          width: parent.width
+          spacing: 6
+
+          Button {
+            Layout.fillWidth: true
+            text: "Eklenti Karargahı"
+            highlighted: root.currentTab === 0
+            onClicked: root.currentTab = 0
+          }
+          Button {
+            Layout.fillWidth: true
+            text: "🖥️ Ekranlar"
+            highlighted: root.currentTab === 1
+            onClicked: root.currentTab = 1
+          }
+          Button {
+            Layout.fillWidth: true
+            text: "🎨 Menü / OEM"
+            highlighted: root.currentTab === 2
+            onClicked: root.currentTab = 2
+          }
+        }
+
+        // TAB 0: ALL PLUGINS HUB
         GridLayout {
+          visible: root.currentTab === 0
           columns: 2
           columnSpacing: 8
           rowSpacing: 8
@@ -202,7 +161,7 @@ Panel {
               height: 48
               radius: 8
               color: mArea.containsMouse ? "#1e293b" : "#0f172a"
-              border.color: mArea.containsMouse ? "#38bdf8" : "#1e293b"
+              border.color: mArea.containsMouse ? "#a855f7" : "#1e293b"
               border.width: 1
 
               RowLayout {
@@ -211,6 +170,7 @@ Panel {
                 spacing: 8
 
                 Text {
+                  textFormat: Text.PlainText
                   text: modelData.icon || "📦"
                   font.pixelSize: 18
                 }
@@ -219,7 +179,8 @@ Panel {
                   Layout.fillWidth: true
                   spacing: 1
                   Text {
-                    text: modelData.name
+                    textFormat: Text.PlainText
+                    text: String(modelData.name || "").slice(0, 30)
                     font.bold: true
                     font.pixelSize: Style.font.caption
                     color: "#f8fafc"
@@ -227,7 +188,8 @@ Panel {
                     width: 180
                   }
                   Text {
-                    text: modelData.description || ""
+                    textFormat: Text.PlainText
+                    text: String(modelData.description || "").slice(0, 50)
                     font.pixelSize: 9
                     color: "#94a3b8"
                     elide: Text.ElideRight
@@ -247,202 +209,57 @@ Panel {
                   } else if (modelData.key === "menu-craft") {
                     root.currentTab = 2
                   } else {
-                    root.close()
-                    if (modelData.exec_cmd && root.bar) {
-                      root.bar.run("omarchy-launch-floating-terminal-with-presentation " + modelData.exec_cmd)
-                    }
+                    root.launchPluginDirect(modelData.exec_cmd)
                   }
                 }
               }
             }
           }
         }
-      }
 
-      // ==========================================
-      // TAB 1: MONITORCRAFT GUI (Mouse Clickable)
-      // ==========================================
-      Column {
-        width: parent.width
-        visible: root.currentTab === 1
-        spacing: 10
-
-        RowLayout {
+        // TAB 1: QUICK MONITOR ACCESS
+        Column {
+          visible: root.currentTab === 1
           width: parent.width
+          spacing: 8
+
           Text {
-            text: root.statusMsg ? "✓ " + root.statusMsg : "Ekran yenileme hızı, ölçek ve konum ayarları:"
-            font.pixelSize: Style.font.caption
-            color: root.statusMsg ? "#34d399" : "#94a3b8"
-            Layout.fillWidth: true
+            textFormat: Text.PlainText
+            text: "🖥️ MonitorCraft Hızlı Kontrolleri"
+            font.bold: true
+            color: "#38bdf8"
           }
-
-          Rectangle {
-            width: 80
-            height: 22
-            radius: 11
-            color: root.vrrActive ? "#059669" : "#334155"
-            Text {
-              anchors.centerIn: parent
-              text: root.vrrActive ? "VRR AÇIK" : "VRR KAPALI"
-              font.pixelSize: 9
-              font.bold: true
-              color: "#ffffff"
-            }
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.runMonitorAction(["--set-vrr", root.vrrActive ? "0" : "1"], root.vrrActive ? "VRR Kapatıldı" : "VRR Açıldı")
-            }
-          }
-        }
-
-        Repeater {
-          model: root.monitorsList
-          delegate: Rectangle {
-            width: mainCol.width
-            height: mCol.implicitHeight + 16
-            radius: 8
-            color: "#0f172a"
-            border.color: "#1e293b"
-            border.width: 1
-
-            Column {
-              id: mCol
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.top: parent.top
-              anchors.margins: 8
-              spacing: 6
-
-              RowLayout {
-                width: parent.width
-                Text {
-                  text: "󰍹 " + modelData.name + " (" + modelData.model + ")"
-                  font.bold: true
-                  color: "#f8fafc"
-                  font.pixelSize: Style.font.caption
-                  Layout.fillWidth: true
-                }
-                Text {
-                  text: modelData.width + "x" + modelData.height + " @" + Math.round(modelData.refresh_rate) + "Hz [x" + modelData.scale + "]"
-                  font.bold: true
-                  color: "#38bdf8"
-                  font.pixelSize: Style.font.caption
-                }
-              }
-
-              // Hz Buttons
-              RowLayout {
-                width: parent.width
-                spacing: 4
-                Text { text: "Hz:"; color: "#94a3b8"; font.pixelSize: 10 }
-                Button { text: "240Hz"; Layout.fillWidth: true; onClicked: root.runMonitorAction(["--monitor", modelData.name, "--mode", modelData.width + "x" + modelData.height + "@240"], modelData.name + " -> 240Hz") }
-                Button { text: "144Hz"; Layout.fillWidth: true; onClicked: root.runMonitorAction(["--monitor", modelData.name, "--mode", modelData.width + "x" + modelData.height + "@144"], modelData.name + " -> 144Hz") }
-                Button { text: "120Hz"; Layout.fillWidth: true; onClicked: root.runMonitorAction(["--monitor", modelData.name, "--mode", modelData.width + "x" + modelData.height + "@120"], modelData.name + " -> 120Hz") }
-                Button { text: "60Hz"; Layout.fillWidth: true; onClicked: root.runMonitorAction(["--monitor", modelData.name, "--mode", modelData.width + "x" + modelData.height + "@60"], modelData.name + " -> 60Hz") }
-              }
-
-              // Scale Buttons
-              RowLayout {
-                width: parent.width
-                spacing: 4
-                Text { text: "Ölçek:"; color: "#94a3b8"; font.pixelSize: 10 }
-                Button { text: "%100"; Layout.fillWidth: true; onClicked: root.runMonitorAction(["--monitor", modelData.name, "--scale", "1.0"], modelData.name + " -> %100") }
-                Button { text: "%125"; Layout.fillWidth: true; onClicked: root.runMonitorAction(["--monitor", modelData.name, "--scale", "1.25"], modelData.name + " -> %125") }
-                Button { text: "%150"; Layout.fillWidth: true; onClicked: root.runMonitorAction(["--monitor", modelData.name, "--scale", "1.5"], modelData.name + " -> %150") }
-                Button { text: "%160"; Layout.fillWidth: true; onClicked: root.runMonitorAction(["--monitor", modelData.name, "--scale", "1.6"], modelData.name + " -> %160") }
-              }
-            }
-          }
-        }
-
-        // Positioning
-        RowLayout {
-          width: parent.width
-          spacing: 6
           Button {
-            text: "⬅ Sola Yerleştir"
-            Layout.fillWidth: true
+            text: "MonitorCraft Tam Stüdyosunu Aç"
+            width: parent.width
             onClicked: {
-              if (root.monitorsList.length >= 2) {
-                root.runMonitorAction(["--monitor", root.monitorsList[1].name, "--position", "0x0"], "Sola yerleştirildi")
-              }
+              root.close()
+              var p = Qt.resolvedUrl("../monitor-craft/monitorcraft-dashboard").toString().replace(/^file:\/\//, "")
+              root.launchPluginDirect(p)
             }
           }
+        }
+
+        // TAB 2: QUICK MENUCRAFT ACCESS
+        Column {
+          visible: root.currentTab === 2
+          width: parent.width
+          spacing: 8
+
+          Text {
+            textFormat: Text.PlainText
+            text: "🎨 MenuCraft Menü & OEM Kontrolleri"
+            font.bold: true
+            color: "#f59e0b"
+          }
           Button {
-            text: "Sağa Yerleştir ➡"
-            Layout.fillWidth: true
+            text: "MenuCraft Tam Stüdyosunu Aç"
+            width: parent.width
             onClicked: {
-              if (root.monitorsList.length >= 2) {
-                var m1_w = Math.round(root.monitorsList[0].width / (root.monitorsList[0].scale || 1))
-                root.runMonitorAction(["--monitor", root.monitorsList[1].name, "--position", m1_w + "x0"], "Sağa yerleştirildi")
-              }
+              root.close()
+              var p = Qt.resolvedUrl("../menu-craft/menucraft-dashboard").toString().replace(/^file:\/\//, "")
+              root.launchPluginDirect(p)
             }
-          }
-          Button {
-            text: "💾 Kaydet"
-            Layout.fillWidth: true
-            onClicked: root.runMonitorAction(["--save"], "Yapılandırma kaydedildi!")
-          }
-        }
-      }
-
-      // ==========================================
-      // TAB 2: MENUCRAFT & OEM GUI (Mouse Clickable)
-      // ==========================================
-      Column {
-        width: parent.width
-        visible: root.currentTab === 2
-        spacing: 10
-
-        Rectangle {
-          width: parent.width
-          height: 60
-          radius: 8
-          color: "#0f172a"
-          border.color: root.oemColor
-          border.width: 1
-
-          RowLayout {
-            anchors.fill: parent
-            anchors.margins: 10
-            spacing: 10
-            Text { text: "🎮"; font.pixelSize: 24 }
-            Column {
-              Layout.fillWidth: true
-              Text { text: root.oemVendor + " • " + root.oemModel; font.bold: true; color: "#f8fafc"; font.pixelSize: Style.font.body }
-              Text { text: "Cyber Flame Red Teması & Özel Donanım Profili Aktif"; color: "#94a3b8"; font.pixelSize: Style.font.caption }
-            }
-          }
-        }
-
-        Button {
-          width: parent.width
-          text: "➕ Yeni Özel Menü Kısayolu Ekle"
-          onClicked: {
-            root.close()
-            var dash = Qt.resolvedUrl("../menu-craft/menucraft-dashboard").toString().replace(/^file:\/\//, "")
-            if (root.bar) root.bar.run("omarchy-launch-floating-terminal-with-presentation " + dash)
-          }
-        }
-
-        Button {
-          width: parent.width
-          text: "🖼️ Bir Uygulamaya Özel Simge/Logo Ata"
-          onClicked: {
-            root.close()
-            var dash = Qt.resolvedUrl("../menu-craft/menucraft-dashboard").toString().replace(/^file:\/\//, "")
-            if (root.bar) root.bar.run("omarchy-launch-floating-terminal-with-presentation " + dash)
-          }
-        }
-
-        Button {
-          width: parent.width
-          text: "👁️ İstenmeyen Sistem Uygulamalarını Gizle"
-          onClicked: {
-            root.close()
-            var dash = Qt.resolvedUrl("../menu-craft/menucraft-dashboard").toString().replace(/^file:\/\//, "")
-            if (root.bar) root.bar.run("omarchy-launch-floating-terminal-with-presentation " + dash)
           }
         }
       }

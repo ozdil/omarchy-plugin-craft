@@ -6,6 +6,11 @@ import json
 import select
 import re
 
+CLEAN_ENV = {
+    "PATH": "/usr/bin:/bin",
+    "LC_ALL": "C"
+}
+
 def get_key():
     if not sys.stdin.isatty():
         try:
@@ -22,8 +27,8 @@ def get_key():
         tty.setraw(fd)
         ch = sys.stdin.read(1)
         if ch == '\x1b':
-            r, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if r:
+            r2, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if r2:
                 ch2 = sys.stdin.read(1)
                 if ch2 == '[':
                     ch3 = sys.stdin.read(1)
@@ -41,28 +46,25 @@ def get_installed_plugins():
     plugin_dir = os.path.dirname(os.path.realpath(__file__))
     engine_bin = os.path.join(plugin_dir, "plugincraft-engine")
     try:
-        res = subprocess.run([engine_bin], capture_output=True, text=True, timeout=2.0)
+        res = subprocess.run([engine_bin], capture_output=True, text=True, timeout=2.0, env=CLEAN_ENV)
         return json.loads(res.stdout).get("plugins", []) if res.returncode == 0 else []
     except Exception:
         return []
-
-def strip_ansi(s):
-    return re.sub(r'\x1b\[[0-9;]*m', '', str(s))
 
 def query_plugin_status(p):
     st_cmd = p.get("status_cmd")
     if st_cmd and os.path.isfile(st_cmd) and os.access(st_cmd, os.X_OK):
         try:
-            res = subprocess.run([st_cmd], capture_output=True, text=True, timeout=0.8)
+            res = subprocess.run([st_cmd], capture_output=True, text=True, timeout=1.0, env=CLEAN_ENV)
             if res.returncode == 0:
                 data = json.loads(res.stdout)
                 txt = data.get("text", "")
-                clean_txt = re.sub(r'[\x00-\x1f\x7f-\x9f\r\n]', '', txt).strip()
+                clean_txt = re.sub(r'[^a-zA-Z0-9_ .:\(\)\[\]-]', '', txt).strip()
                 if clean_txt:
                     return clean_txt[:35]
         except Exception:
             pass
-    return p.get("description", "Hazır & Entegre")[:35]
+    return re.sub(r'[^a-zA-Z0-9_ .:\(\)\[\]-]', '', p.get("description", "Hazir"))[:35]
 
 def main():
     plugins = get_installed_plugins()
@@ -71,8 +73,7 @@ def main():
         print("\033[1;36m╔══════════════════════════════════════════════════════════════════════════════╗\033[0m")
         print("║  󰏖 \033[1;33mPLUGINCRAFT\033[0m • \033[1;37mOmarchy Eklenti Merkezi\033[0m                                    ║")
         print("\033[1;36m╚══════════════════════════════════════════════════════════════════════════════╝\033[0m\n")
-        print("  \033[1;33mℹ️  Sistemde henüz kurulu bir harici eklenti bulunamadı.\033[0m")
-        print("  Yeni eklentiler kurdukça PluginCraft otomatik olarak listeleyecektir.\n")
+        print("  \033[1;33mℹ️  Sistemde henüz kurulu bir harici eklenti bulunamadı.\033[0m\n")
         print("  \033[0;90m[q] Çıkış\033[0m")
         while True:
             k = get_key()
@@ -120,9 +121,9 @@ def main():
         elif key == 'ENTER':
             target = plugins[selected_idx]
             cmd = target.get("exec_cmd")
-            if cmd and os.path.isfile(cmd):
+            if cmd and os.path.isfile(cmd) and os.access(cmd, os.X_OK):
                 os.system("clear")
-                subprocess.run([cmd])
+                subprocess.run([cmd], env=CLEAN_ENV)
                 status_cache[target["key"]] = query_plugin_status(target)
             num_buffer = ""
         elif key.isdigit():
@@ -133,9 +134,9 @@ def main():
                 if val >= 2 or len(num_buffer) >= 2 or len(plugins) < 10:
                     target = plugins[selected_idx]
                     cmd = target.get("exec_cmd")
-                    if cmd and os.path.isfile(cmd):
+                    if cmd and os.path.isfile(cmd) and os.access(cmd, os.X_OK):
                         os.system("clear")
-                        subprocess.run([cmd])
+                        subprocess.run([cmd], env=CLEAN_ENV)
                         status_cache[target["key"]] = query_plugin_status(target)
                     num_buffer = ""
             elif len(num_buffer) >= 2:

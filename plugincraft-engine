@@ -4,8 +4,16 @@ import sys
 import json
 import subprocess
 import re
+import stat
 
 PLUGINS_BASE = os.path.expanduser("~/.config/omarchy/plugins")
+MAX_BYTE_LIMIT = 65536
+MAX_PLUGINS = 32
+
+CLEAN_ENV = {
+    "PATH": "/usr/bin:/bin",
+    "LC_ALL": "C"
+}
 
 KNOWN_ICONS = {
     "cyber-sentinel": "🛡️",
@@ -23,8 +31,57 @@ KNOWN_ICONS = {
     "omasend": "🚀"
 }
 
-def sanitize_str(s, max_len=60):
-    return re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(s))[:max_len].strip()
+def sanitize_field(s, max_len=64):
+    clean = re.sub(r'[^a-zA-Z0-9_ .:\(\)\[\]-]', '', str(s))
+    return clean[:max_len].strip()
+
+def is_valid_plugin_key(name):
+    return bool(re.match(r'^[a-z0-9]+(-[a-z0-9]+)*$', str(name))) and len(name) <= 32
+
+def is_safe_executable(filepath, base_dir):
+    try:
+        if not os.path.isfile(filepath) or os.path.islink(filepath):
+            return False
+        real_p = os.path.realpath(filepath)
+        real_base = os.path.realpath(base_dir)
+        if os.path.commonpath([real_p, real_base]) != real_base:
+            return False
+        st = os.stat(filepath, follow_symlinks=False)
+        if st.st_uid != os.getuid():
+            return False
+        if st.st_mode & 0o022:  # group or other writable
+            return False
+        if not (st.st_mode & 0o111):  # not executable
+            return False
+        fname = os.path.basename(filepath)
+        if not re.match(r'^[a-zA-Z0-9_-]{1,40}$', fname):
+            return False
+        return True
+    except Exception:
+        return False
+
+def read_safe_manifest(manifest_path, default_id, default_name):
+    if not os.path.isfile(manifest_path) or os.path.islink(manifest_path):
+        return default_id, default_name, "Omarchy Eklentisi", "1.0.0"
+    try:
+        fd = os.open(manifest_path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+        try:
+            st = os.fstat(fd)
+            if st.st_uid != os.getuid() or (st.st_mode & 0o022):
+                return default_id, default_name, "Omarchy Eklentisi", "1.0.0"
+            raw = os.read(fd, min(MAX_BYTE_LIMIT, st.st_size)).decode("utf-8", errors="ignore")
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                p_id = sanitize_field(data.get("id", default_id), 35)
+                p_name = sanitize_field(data.get("name", default_name), 30)
+                p_desc = sanitize_field(data.get("description", "Omarchy Eklentisi"), 60)
+                p_ver = sanitize_field(data.get("version", "1.0.0"), 10)
+                return p_id, p_name, p_desc, p_ver
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+    return default_id, default_name, "Omarchy Eklentisi", "1.0.0"
 
 def get_installed_plugins():
     plugins = []
@@ -33,7 +90,9 @@ def get_installed_plugins():
 
     seen_ids = set()
 
-    for dirname in sorted(os.listdir(PLUGINS_BASE)):
+    for dirname in sorted(os.listdir(PLUGINS_BASE))[:MAX_PLUGINS]:
+        if not is_valid_plugin_key(dirname):
+            continue
         dirpath = os.path.join(PLUGINS_BASE, dirname)
         if os.path.islink(dirpath) or not os.path.isdir(dirpath) or dirname.startswith("."):
             continue
@@ -41,60 +100,48 @@ def get_installed_plugins():
             continue
 
         manifest_file = os.path.join(dirpath, "manifest.json")
-        name = dirname.replace("-", " ").title()
-        plugin_id = f"ozdil.{dirname}"
-        desc = "Omarchy Eklentisi"
-        version = "1.0.0"
+        def_name = dirname.replace("-", " ").title()
+        def_id = f"ozdil.{dirname}"
 
-        if os.path.exists(manifest_file):
-            try:
-                with open(manifest_file, "r", encoding="utf-8", errors="ignore") as f:
-                    m = json.load(f)
-                    plugin_id = m.get("id", plugin_id)
-                    name = m.get("name", name)
-                    desc = m.get("description", desc)
-                    version = m.get("version", version)
-            except Exception:
-                pass
+        plugin_id, name, desc, version = read_safe_manifest(manifest_file, def_id, def_name)
 
         if plugin_id in seen_ids or plugin_id == "ozdil.plugin-craft":
             continue
         seen_ids.add(plugin_id)
 
-        # Locate dashboard executable dynamically
+        # Locate safe dashboard executable
         exec_path = ""
-        for f in sorted(os.listdir(dirpath)):
-            if f.endswith(("-dashboard", "dashboard")) and not f.endswith((".qml", ".json", ".md")):
-                f_full = os.path.join(dirpath, f)
-                if os.path.isfile(f_full) and os.access(f_full, os.X_OK):
-                    exec_path = f_full
-                    break
+        candidate_dashboards = [
+            f"{dirname}-dashboard",
+            "dashboard"
+        ]
+        for cand in candidate_dashboards:
+            cand_p = os.path.join(dirpath, cand)
+            if is_safe_executable(cand_p, dirpath):
+                exec_path = cand_p
+                break
 
-        if not exec_path:
-            for f in sorted(os.listdir(dirpath)):
-                f_full = os.path.join(dirpath, f)
-                if os.path.isfile(f_full) and os.access(f_full, os.X_OK) and not f.endswith((".qml", ".json", ".md", ".png", ".jpg")):
-                    exec_path = f_full
-                    break
-
-        # Locate status executable dynamically
+        # Locate safe status executable
         status_path = ""
-        for f in sorted(os.listdir(dirpath)):
-            if f.endswith(("-status", "status")) and not f.endswith((".qml", ".json", ".md")):
-                f_full = os.path.join(dirpath, f)
-                if os.path.isfile(f_full) and os.access(f_full, os.X_OK):
-                    status_path = f_full
-                    break
+        candidate_statuses = [
+            f"{dirname}-status",
+            "status"
+        ]
+        for cand in candidate_statuses:
+            cand_p = os.path.join(dirpath, cand)
+            if is_safe_executable(cand_p, dirpath):
+                status_path = cand_p
+                break
 
         icon = KNOWN_ICONS.get(dirname, "📦")
 
         plugins.append({
             "key": dirname,
-            "id": sanitize_str(plugin_id, 35),
-            "name": sanitize_str(name, 30),
+            "id": plugin_id,
+            "name": name,
             "icon": icon,
-            "description": sanitize_str(desc, 60),
-            "version": sanitize_str(version, 10),
+            "description": desc,
+            "version": version,
             "path": dirpath,
             "exec_cmd": exec_path,
             "status_cmd": status_path
@@ -109,7 +156,10 @@ def main():
         "total_plugins": len(plugins),
         "plugins": plugins
     }
-    print(json.dumps(output))
+    raw_json = json.dumps(output)
+    if len(raw_json.encode("utf-8")) > MAX_BYTE_LIMIT:
+        raw_json = json.dumps({"status": "OK", "total_plugins": len(plugins[:8]), "plugins": plugins[:8]})
+    print(raw_json)
 
 if __name__ == "__main__":
     main()
