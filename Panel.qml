@@ -78,7 +78,7 @@ Panel {
     bar: root.bar
     text: "PLUGINS: " + root.totalPlugins
     tooltipText: "PluginCraft Hub • " + root.totalPlugins + " Active Plugins\nNative Rust Engine"
-    onClicked: root.toggle()
+    onPressed: function(b) { if (root.opened) root.close(); else root.open(); }
   }
 
   KeyboardPanel {
