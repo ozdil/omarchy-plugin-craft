@@ -82,6 +82,7 @@ Panel {
   }
 
   KeyboardPanel {
+    bar: root.bar
     id: panel
     anchorItem: button
     owner: root
