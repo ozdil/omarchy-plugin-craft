@@ -11,31 +11,31 @@ Panel {
   moduleName: "ozdil.plugin-craft"
   ipcTarget: "ozdil.plugin-craft"
 
-  property int currentTab: 0 // 0: Hub, 1: MonitorCraft, 2: MenuCraft
-  property int activePluginCount: 13
+  property int totalPlugins: 0
   property var pluginList: []
-  property var activeMonitors: []
-  property string activeOemBrand: "GAME GARAJ"
-  property string statusMsg: ""
+  property string statusMsg: "READY"
 
   Process {
     id: engineProc
-    command: [Qt.resolvedUrl("plugincraft-engine").toString().replace(/^file:\/\//, "")]
+    command: [Qt.resolvedUrl("plugincraft-engine").toString().replace(/^file:\/\//, ""), "--json"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
         try {
-          var cleanText = String(text || "").slice(0, 65536)
-          var parsed = JSON.parse(cleanText)
-          root.activePluginCount = parsed.total_plugins || 0
-          root.pluginList = parsed.plugins || []
-        } catch(e) {}
+          var raw = String(text || "").slice(0, 65536)
+          var data = JSON.parse(raw)
+          root.totalPlugins = data.total_plugins || 0
+          root.pluginList = data.plugins || []
+          root.statusMsg = "OPERATIONAL"
+        } catch (e) {
+          root.statusMsg = "PARSE ERROR"
+        }
       }
     }
   }
 
   Process {
-    id: launchProc
+    id: execProc
     onExited: function(exitCode) {
       launchDeadlineTimer.stop()
     }
@@ -46,26 +46,24 @@ Panel {
     interval: 5000
     repeat: false
     onTriggered: {
-      if (launchProc.running) launchProc.kill()
+      if (execProc.running) execProc.kill()
     }
   }
 
   Component.onDestruction: {
     if (engineProc.running) engineProc.kill()
-    if (launchProc.running) launchProc.kill()
+    if (execProc.running) execProc.kill()
   }
 
-  function launchPluginDirect(execPath) {
-    if (!execPath || typeof execPath !== "string") return
-    if (!execPath.startsWith("/")) return
-    root.close()
-    launchProc.command = ["omarchy-launch-floating-terminal-with-presentation", execPath]
+  function runPlugin(cmd) {
+    if (!cmd || typeof cmd !== "string" || !cmd.startsWith("/")) return
+    execProc.command = [cmd]
     launchDeadlineTimer.restart()
-    launchProc.running = true
+    execProc.running = true
   }
 
   Timer {
-    interval: 6000
+    interval: 5000
     running: true
     repeat: true
     triggeredOnStart: true
@@ -74,192 +72,222 @@ Panel {
     }
   }
 
-  BarIconButton {
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰏖 " + root.activePluginCount
-    color: "#a855f7"
-    slotSize: Style.bar.statusSlot
-    tooltipText: "PluginCraft: " + root.activePluginCount + " Eklenti Aktif"
-    onPressed: root.toggle()
+    text: "PLUGINS: " + root.totalPlugins
+    tooltipText: "PluginCraft Hub • " + root.totalPlugins + " Active Plugins\nNative Rust Engine"
+    onClicked: root.toggle()
   }
 
   KeyboardPanel {
     id: panel
     anchorItem: button
     owner: root
-    width: 540
-    contentHeight: Math.min(680, panel.fittedContentHeight(mainCol.implicitHeight + 20))
+    width: Style.space(520)
+    contentHeight: Math.min(Style.space(640), panel.fittedContentHeight(mainCol.implicitHeight + Style.space(24)))
 
     Flickable {
       anchors.fill: parent
+      anchors.margins: Style.space(12)
       contentHeight: mainCol.implicitHeight
       clip: true
 
-      Column {
+      ColumnLayout {
         id: mainCol
         width: parent.width
-        spacing: Style.space(10)
+        spacing: Style.space(12)
 
         // Header
         RowLayout {
-          width: parent.width
-          Text {
-            textFormat: Text.PlainText
-            text: "󰏖 PluginCraft"
-            font.bold: true
-            font.pixelSize: Style.font.title
-            color: "#a855f7"
+          Layout.fillWidth: true
+          ColumnLayout {
+            spacing: Style.space(2)
+            Text {
+              textFormat: Text.PlainText
+              text: "PLUGINCRAFT"
+              font.bold: true
+              font.pixelSize: Style.font.title
+              color: "#a855f7"
+            }
+            Text {
+              textFormat: Text.PlainText
+              text: "CENTRALIZED PLUGIN HUB • NATIVE ARCH"
+              font.pixelSize: Style.font.caption
+              color: "#94a3b8"
+            }
           }
           Item { Layout.fillWidth: true }
-          Text {
-            textFormat: Text.PlainText
-            text: root.activePluginCount + " Eklenti Kurulu"
-            font.pixelSize: Style.font.caption
-            color: "#94a3b8"
+          Rectangle {
+            width: Style.space(90)
+            height: Style.space(24)
+            radius: Style.space(4)
+            color: "#1e293b"
+            border.color: "#334155"
+            border.width: 1
+            Text {
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: root.statusMsg
+              font.bold: true
+              font.pixelSize: Style.font.caption
+              color: "#a855f7"
+            }
           }
         }
 
-        // Tab Selector
-        RowLayout {
-          width: parent.width
-          spacing: 6
+        // Summary Bar
+        Rectangle {
+          Layout.fillWidth: true
+          height: Style.space(52)
+          radius: Style.space(8)
+          color: "#0f172a"
+          border.color: "#1e293b"
+          border.width: 1
 
-          Button {
-            Layout.fillWidth: true
-            text: "Eklenti Karargahı"
-            highlighted: root.currentTab === 0
-            onClicked: root.currentTab = 0
-          }
-          Button {
-            Layout.fillWidth: true
-            text: "🖥️ Ekranlar"
-            highlighted: root.currentTab === 1
-            onClicked: root.currentTab = 1
-          }
-          Button {
-            Layout.fillWidth: true
-            text: "🎨 Menü / OEM"
-            highlighted: root.currentTab === 2
-            onClicked: root.currentTab = 2
+          RowLayout {
+            anchors.fill: parent
+            anchors.margins: Style.space(10)
+            ColumnLayout {
+              spacing: Style.space(1)
+              Text {
+                textFormat: Text.PlainText
+                text: "TOTAL INSTALLED"
+                font.pixelSize: Style.font.caption
+                color: "#64748b"
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: root.totalPlugins + " PLUGINS"
+                font.bold: true
+                font.pixelSize: Style.font.body
+                color: "#f8fafc"
+              }
+            }
+            Item { Layout.fillWidth: true }
+            ColumnLayout {
+              spacing: Style.space(1)
+              Text {
+                textFormat: Text.PlainText
+                text: "ENGINE CORE"
+                font.pixelSize: Style.font.caption
+                color: "#64748b"
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: "NATIVE RUST"
+                font.bold: true
+                font.pixelSize: Style.font.body
+                color: "#38bdf8"
+              }
+            }
+            Item { Layout.fillWidth: true }
+            ColumnLayout {
+              spacing: Style.space(1)
+              Text {
+                textFormat: Text.PlainText
+                text: "INTERFACE"
+                font.pixelSize: Style.font.caption
+                color: "#64748b"
+              }
+              Text {
+                textFormat: Text.PlainText
+                text: "ZERO CLI / NATIVE UI"
+                font.bold: true
+                font.pixelSize: Style.font.body
+                color: "#4ade80"
+              }
+            }
           }
         }
 
-        // TAB 0: ALL PLUGINS HUB
-        GridLayout {
-          visible: root.currentTab === 0
-          columns: 2
-          columnSpacing: 8
-          rowSpacing: 8
-          width: parent.width
+        // Plugin List Section Header
+        Text {
+          textFormat: Text.PlainText
+          text: "REGISTERED OMARCHY PLUGINS"
+          font.bold: true
+          font.pixelSize: Style.font.caption
+          color: "#94a3b8"
+        }
+
+        // Plugin Cards
+        ColumnLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(6)
 
           Repeater {
             model: root.pluginList
             delegate: Rectangle {
               Layout.fillWidth: true
-              height: 48
-              radius: 8
-              color: mArea.containsMouse ? "#1e293b" : "#0f172a"
-              border.color: mArea.containsMouse ? "#a855f7" : "#1e293b"
+              height: Style.space(54)
+              radius: Style.space(6)
+              color: "#0f172a"
+              border.color: "#1e293b"
               border.width: 1
 
               RowLayout {
                 anchors.fill: parent
-                anchors.margins: 6
-                spacing: 8
+                anchors.margins: Style.space(8)
+                spacing: Style.space(8)
 
-                Text {
-                  textFormat: Text.PlainText
-                  text: modelData.icon || "📦"
-                  font.pixelSize: 18
-                }
-
-                Column {
+                ColumnLayout {
                   Layout.fillWidth: true
-                  spacing: 1
-                  Text {
-                    textFormat: Text.PlainText
-                    text: String(modelData.name || "").slice(0, 30)
-                    font.bold: true
-                    font.pixelSize: Style.font.caption
-                    color: "#f8fafc"
-                    elide: Text.ElideRight
-                    width: 180
+                  spacing: Style.space(2)
+                  RowLayout {
+                    spacing: Style.space(6)
+                    Text {
+                      textFormat: Text.PlainText
+                      text: (modelData.name || modelData.key || "").toUpperCase()
+                      font.bold: true
+                      font.pixelSize: Style.font.caption
+                      color: "#f8fafc"
+                      elide: Text.ElideRight
+                    }
+                    Text {
+                      textFormat: Text.PlainText
+                      text: "v" + (modelData.version || "1.0.0")
+                      font.pixelSize: Style.font.caption
+                      color: "#64748b"
+                    }
                   }
                   Text {
                     textFormat: Text.PlainText
-                    text: String(modelData.description || "").slice(0, 50)
-                    font.pixelSize: 9
+                    text: modelData.description || "Omarchy Native Plugin"
+                    font.pixelSize: Style.font.caption
                     color: "#94a3b8"
                     elide: Text.ElideRight
-                    width: 180
+                    Layout.fillWidth: true
                   }
                 }
-              }
 
-              MouseArea {
-                id: mArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                  if (modelData.key === "monitor-craft") {
-                    root.currentTab = 1
-                  } else if (modelData.key === "menu-craft") {
-                    root.currentTab = 2
-                  } else {
-                    root.launchPluginDirect(modelData.exec_cmd)
-                  }
+                Button {
+                  text: "LAUNCH"
+                  visible: modelData.exec_cmd && modelData.exec_cmd.length > 0
+                  onClicked: root.runPlugin(modelData.exec_cmd)
                 }
               }
             }
           }
         }
 
-        // TAB 1: QUICK MONITOR ACCESS
-        Column {
-          visible: root.currentTab === 1
-          width: parent.width
-          spacing: 8
+        // Footer Actions
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(8)
 
-          Text {
-            textFormat: Text.PlainText
-            text: "🖥️ MonitorCraft Hızlı Kontrolleri"
-            font.bold: true
-            color: "#38bdf8"
-          }
           Button {
-            text: "MonitorCraft Tam Stüdyosunu Aç"
-            width: parent.width
+            Layout.fillWidth: true
+            text: "REFRESH PLUGINS"
             onClicked: {
-              root.close()
-              var p = Qt.resolvedUrl("../monitor-craft/monitorcraft-dashboard").toString().replace(/^file:\/\//, "")
-              root.launchPluginDirect(p)
+              if (!engineProc.running) engineProc.running = true
             }
           }
-        }
 
-        // TAB 2: QUICK MENUCRAFT ACCESS
-        Column {
-          visible: root.currentTab === 2
-          width: parent.width
-          spacing: 8
-
-          Text {
-            textFormat: Text.PlainText
-            text: "🎨 MenuCraft Menü & OEM Kontrolleri"
-            font.bold: true
-            color: "#f59e0b"
-          }
           Button {
-            text: "MenuCraft Tam Stüdyosunu Aç"
-            width: parent.width
-            onClicked: {
-              root.close()
-              var p = Qt.resolvedUrl("../menu-craft/menucraft-dashboard").toString().replace(/^file:\/\//, "")
-              root.launchPluginDirect(p)
-            }
+            Layout.fillWidth: true
+            text: "CLOSE"
+            onClicked: root.close()
           }
         }
       }
