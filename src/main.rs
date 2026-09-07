@@ -93,20 +93,21 @@ fn scan() -> ScanResult {
                     seen_ids.insert(id.clone());
 
                     let mut exec_cmd = String::new();
-                    for cand in &[format!("{}-dashboard", clean_key), "dashboard".to_string(), format!("{}-engine", clean_key)] {
-                        let cp = p.join(cand);
-                        if cp.is_file() {
-                            exec_cmd = cp.to_string_lossy().to_string();
-                            break;
-                        }
-                    }
-
                     let mut status_cmd = String::new();
-                    for cand in &[format!("{}-status", clean_key), "status".to_string()] {
-                        let cp = p.join(cand);
-                        if cp.is_file() {
-                            status_cmd = cp.to_string_lossy().to_string();
-                            break;
+                    if let Ok(sub_entries) = fs::read_dir(&p) {
+                        for sub_entry in sub_entries.flatten() {
+                            let sp = sub_entry.path();
+                            if sp.is_file() {
+                                let fname = sp.file_name().unwrap_or_default().to_string_lossy().to_string();
+                                if fname.contains("dashboard") {
+                                    exec_cmd = sp.to_string_lossy().to_string();
+                                } else if exec_cmd.is_empty() && fname.contains("engine") {
+                                    exec_cmd = sp.to_string_lossy().to_string();
+                                }
+                                if fname.contains("status") {
+                                    status_cmd = sp.to_string_lossy().to_string();
+                                }
+                            }
                         }
                     }
 
