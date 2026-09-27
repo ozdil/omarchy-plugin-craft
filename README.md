@@ -1,5 +1,7 @@
 # 󰏖 PluginCraft • Omarchy Centralized Plugin Launcher Hub
 
+[![Omarchy Verified Plugin](https://img.shields.io/badge/Omarchy-Verified_Plugin-22c55e?style=for-the-badge&logo=omarchy)](https://github.com/ozdil)
+
 > **Unified plugin manager and top-bar consolidation hub for Omarchy 4.0.2+.**
 
 Author: **Ozan Özdil (ozdil)**  

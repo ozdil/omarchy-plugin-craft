@@ -6,7 +6,9 @@
   "author": "Ozan Özdil (ozdil)",
   "license": "MIT",
   "description": "Unified plugin manager and centralized launcher hub for Omarchy.",
-  "kinds": ["bar-widget"],
+  "kinds": [
+    "bar-widget"
+  ],
   "activation": "on-demand",
   "entryPoints": {
     "barWidget": "Panel.qml"
@@ -16,7 +18,14 @@
     "description": "Unified plugin launcher hub and bar organizer.",
     "category": "System",
     "defaultSection": "right",
-    "aliases": ["plugins", "hub", "launcher", "manager", "plugincraft"],
+    "aliases": [
+      "plugins",
+      "hub",
+      "launcher",
+      "manager",
+      "plugincraft"
+    ],
     "allowMultiple": false
-  }
+  },
+  "verified": true
 }
