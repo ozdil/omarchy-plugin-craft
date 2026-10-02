@@ -1,6 +1,6 @@
 # Maintainer: Ozan Özdil <ozan@pm.me>
 pkgname=omarchy-plugin-craft
-pkgver=1.1.0
+pkgver=1.1.1
 pkgrel=1
 pkgdesc="Unified plugin manager and centralized launcher hub for Omarchy Linux"
 arch=('x86_64')

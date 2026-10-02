@@ -14,6 +14,54 @@ Panel {
   property int totalPlugins: 0
   property var pluginList: []
   property string statusMsg: "READY"
+  property bool showAboutModal: false
+
+  readonly property string fontFamily: (root.bar && root.bar.fontFamily) ? root.bar.fontFamily : ((typeof Style !== "undefined" && Style.font && Style.font.family) ? Style.font.family : "JetBrainsMono Nerd Font, JetBrains Mono, monospace")
+  readonly property string manifestPath: Qt.resolvedUrl("manifest.json").toString().replace(/^file:\/\//, "")
+  readonly property string manifestFallbackPath: (Quickshell.env("HOME") || "/home/ozdil") + "/.config/omarchy/plugins/ozdil.plugin-craft/manifest.json"
+
+  property string pluginName: "PluginCraft"
+  property string pluginVersion: "1.1.1"
+  property string pluginDescription: "Unified plugin manager, centralized launcher hub, bar layout organizer, and dashboard detector for Omarchy Linux."
+  property string pluginAuthor: "Ozan Özdil (ozdil)"
+  property string pluginLicense: "MIT"
+  property bool pluginVerified: true
+
+  function loadManifest(rawJson) {
+    try {
+      if (!rawJson || String(rawJson).trim() === "") return
+      var parsed = JSON.parse(rawJson)
+      if (parsed.name) root.pluginName = parsed.name
+      if (parsed.version) root.pluginVersion = parsed.version
+      if (parsed.description) root.pluginDescription = parsed.description
+      if (parsed.author) root.pluginAuthor = parsed.author
+      if (parsed.license) root.pluginLicense = parsed.license
+      if (parsed.verified !== undefined) root.pluginVerified = Boolean(parsed.verified)
+    } catch(e) {}
+  }
+
+  FileView {
+    id: manifestWatcher
+    path: root.manifestPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadManifest(text())
+    onLoadFailed: {
+      manifestFallbackWatcher.reload()
+    }
+    onFileChanged: reload()
+  }
+
+  FileView {
+    id: manifestFallbackWatcher
+    path: root.manifestFallbackPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadManifest(text())
+    onFileChanged: reload()
+  }
 
   Process {
     id: engineProc
@@ -120,20 +168,35 @@ Panel {
             }
           }
           Item { Layout.fillWidth: true }
-          Rectangle {
-            width: Style.space(90)
-            height: Style.space(24)
-            radius: Style.space(4)
-            color: "#1e293b"
-            border.color: "#334155"
-            border.width: 1
-            Text {
-              anchors.centerIn: parent
-              textFormat: Text.PlainText
-              text: root.statusMsg
-              font.bold: true
-              font.pixelSize: Style.font.caption
-              color: "#a855f7"
+          RowLayout {
+            spacing: Style.space(6)
+
+            Rectangle {
+              width: Style.space(90)
+              height: Style.space(24)
+              radius: Style.space(4)
+              color: "#1e293b"
+              border.color: "#334155"
+              border.width: 1
+              Text {
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: root.statusMsg
+                font.family: root.fontFamily
+                font.bold: true
+                font.pixelSize: Style.font.caption
+                color: "#a855f7"
+              }
+            }
+
+            Button {
+              id: infoBtn
+              text: "󰋽"
+              tooltipText: "About & Imprint"
+              bordered: true
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              onClicked: root.showAboutModal = !root.showAboutModal
             }
           }
         }
@@ -280,6 +343,7 @@ Panel {
           Button {
             Layout.fillWidth: true
             text: "REFRESH PLUGINS"
+            fontFamily: root.fontFamily
             onClicked: {
               if (!engineProc.running) engineProc.running = true
             }
@@ -288,8 +352,121 @@ Panel {
           Button {
             Layout.fillWidth: true
             text: "CLOSE"
+            fontFamily: root.fontFamily
             onClicked: root.close()
           }
+        }
+      }
+    }
+
+    // About & Imprint Modal Overlay
+    Rectangle {
+      id: aboutOverlay
+      anchors.fill: parent
+      visible: root.showAboutModal
+      color: Qt.rgba(0.05, 0.05, 0.07, 0.96)
+      z: 99
+
+      MouseArea {
+        anchors.fill: parent
+      }
+
+      Column {
+        anchors.centerIn: parent
+        width: parent.width - Style.space(40)
+        spacing: Style.space(12)
+
+        Row {
+          width: parent.width
+          Item {
+            width: parent.width - closeAboutBtn.implicitWidth
+            implicitHeight: aboutTitleText.implicitHeight
+
+            Row {
+              spacing: Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+
+              Text {
+                id: aboutTitleText
+                text: root.pluginName
+                color: root.bar ? root.bar.foreground : Color.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+
+              Rectangle {
+                visible: root.pluginVerified
+                implicitWidth: verifBadgeText.implicitWidth + Style.space(8)
+                implicitHeight: Style.space(18)
+                radius: Style.space(4)
+                color: Qt.rgba(0.13, 0.77, 0.37, 0.18)
+                border.color: "#22c55e"
+                border.width: 1
+                anchors.verticalCenter: parent.verticalCenter
+
+                Text {
+                  id: verifBadgeText
+                  anchors.centerIn: parent
+                  text: "VERIFIED"
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption - 2
+                  font.bold: true
+                  color: "#22c55e"
+                }
+              }
+            }
+          }
+
+          Button {
+            id: closeAboutBtn
+            text: "✕"
+            bordered: true
+            foreground: root.bar ? root.bar.foreground : Color.foreground
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            onClicked: root.showAboutModal = false
+          }
+        }
+
+        Text {
+          width: parent.width
+          wrapMode: Text.WordWrap
+          text: "Sürüm: " + root.pluginVersion + "\nGeliştirici: " + root.pluginAuthor + "\nLisans: " + root.pluginLicense + "\n\n" + root.pluginDescription
+          color: root.bar ? root.bar.foreground : Color.foreground
+          opacity: 0.85
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          lineHeight: 1.3
+        }
+
+        PanelSeparator {
+          width: parent.width
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+        }
+
+        Button {
+          width: parent.width
+          text: "GitHub / Contact"
+          iconText: "󰊤"
+          bordered: true
+          foreground: root.bar ? root.bar.foreground : Color.foreground
+          accent: Color.accent
+          fontFamily: root.fontFamily
+          fontSize: Style.font.caption
+          onClicked: Qt.openUrlExternally("https://github.com/ozdil")
+        }
+
+        Button {
+          width: parent.width
+          text: "Buy Me a Coffee"
+          iconText: "󰅖"
+          bordered: true
+          foreground: "#000000"
+          color: "#FFDD00"
+          fontFamily: root.fontFamily
+          fontSize: Style.font.caption
+          onClicked: Qt.openUrlExternally("https://buymeacoffee.com/ozdil")
         }
       }
     }

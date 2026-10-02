@@ -65,7 +65,7 @@ fn scan() -> ScanResult {
                     let clean_key = key.trim_start_matches("ozdil.").to_string();
                     let mut id = format!("ozdil.{}", clean_key);
                     let mut name = clean_key.replace('-', " ").to_uppercase();
-                    let mut version = "1.1.0".to_string();
+                    let mut version = "1.1.1".to_string();
                     let mut desc = "Omarchy Native Plugin".to_string();
 
                     if mpath.is_file() {
